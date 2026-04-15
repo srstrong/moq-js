@@ -129,7 +129,6 @@ export class Renderer {
 
 			try {
 				this.#decoder.configure(this.#decoderConfig)
-				console.log(`[VideoWorker] Decoder configured successfully. New state: ${this.#decoder.state}`)
 			} catch (e) {
 				console.error("[VideoWorker] FAILED to configure decoder:", e)
 				return // Stop processing if configure fails
@@ -164,7 +163,6 @@ export class Renderer {
 				timestamp: frame.sample.dts / frame.track.timescale,
 			})
 
-			console.log(`[VideoWorker] Decoding chunk, type: ${chunk.type}, size: ${chunk.byteLength}`)
 			try {
 				this.#decoder.decode(chunk)
 			} catch (e) {

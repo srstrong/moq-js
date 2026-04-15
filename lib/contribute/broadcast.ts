@@ -1,5 +1,6 @@
 import { Connection, SubscribeRecv } from "../transport"
 import { asError } from "../common/error"
+import { log } from "../common/log"
 import { Segment } from "./segment"
 import { Track } from "./track"
 import * as Catalog from "../media/catalog"
@@ -44,6 +45,7 @@ export class Broadcast {
 			this.#tracks.set(track.name, track)
 
 			const settings = media.getSettings()
+			log.debug("track settings", { name: track.name, kind: media.kind, settings })
 
 			if (media.kind === "audio") {
 				const audioContext = new AudioContext();
@@ -55,7 +57,6 @@ export class Broadcast {
 				audioContext.close()
 			}
 
-			console.log("track settings", settings, media, mediaTracks)
 
 			if (isVideoTrackSettings(settings)) {
 				if (!config.video) {
@@ -118,7 +119,7 @@ export class Broadcast {
 	}
 
 	async #run() {
-		console.log("[Broadcast] #run loop started")
+		log.debug("broadcast run loop started")
 		await this.connection.publish_namespace(this.namespace)
 
 		for (; ;) {
@@ -128,7 +129,7 @@ export class Broadcast {
 			// Run an async task to serve each subscription.
 			this.#serveSubscribe(subscriber).catch((e) => {
 				const err = asError(e)
-				console.warn("failed to serve subscribe", err)
+				log.warn("failed to serve subscribe", err)
 			})
 		}
 	}
@@ -136,7 +137,7 @@ export class Broadcast {
 	async #serveSubscribe(subscriber: SubscribeRecv) {
 		try {
 			const [base, ext] = splitExt(subscriber.track)
-			console.log("serving subscribe", subscriber.track, subscriber.namespace, base, ext)
+			log.debug("serving subscribe", { track: subscriber.track, namespace: subscriber.namespace, base, ext })
 			if (ext === "catalog") {
 				await this.#serveCatalog(subscriber, base)
 			} else if (ext === "mp4") {
@@ -147,7 +148,7 @@ export class Broadcast {
 				throw new Error(`unknown subscription: ${subscriber.track}`)
 			}
 		} catch (e) {
-			console.error("failed to serve subscribe", e)
+			log.error("failed to serve subscribe", e)
 			const err = asError(e)
 			// TODO(itzmanish): should check if the error is not found and send appropriate error code
 			await subscriber.close({ code: 0n, reason: `failed to process subscribe: ${err.message}` })
@@ -204,7 +205,7 @@ export class Broadcast {
 			// Serve the segment and log any errors that occur.
 			this.#serveSegment(subscriber, segment).catch((e) => {
 				const err = asError(e)
-				console.warn("failed to serve segment", err)
+				log.warn("failed to serve segment", err)
 			})
 		}
 	}

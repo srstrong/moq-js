@@ -410,8 +410,12 @@ export class ReadableStreamBuffer implements Reader {
     }
 
     async close() {
-        this.reader.releaseLock()
-        await this.readableStream.cancel()
+        try {
+            this.reader.releaseLock()
+            await this.readableStream.cancel()
+        } catch {
+            // Stream may already be errored or closed.
+        }
     }
 
     release(): [Uint8Array, ReadableStream<Uint8Array>] {
@@ -436,8 +440,13 @@ export class WritableStreamBuffer implements Writer {
     }
 
     async close() {
-        this.writer.releaseLock()
-        return this.writableStream.close()
+        try {
+            this.writer.releaseLock()
+            await this.writableStream.close()
+        } catch {
+            // Stream may already be errored or closed (e.g. the peer
+            // closed the QUIC stream). Safe to ignore.
+        }
     }
 
     async flush() {
@@ -539,8 +548,8 @@ export class ReadableWritableStreamBuffer implements Reader, Writer {
     }
 
     async close() {
-        this.readStreamBuffer.close()
-        this.writeStreamBuffer.close()
+        try { await this.readStreamBuffer.close() } catch { /* already closed/errored */ }
+        try { await this.writeStreamBuffer.close() } catch { /* already closed/errored */ }
     }
     async flush(): Promise<void> {
         return this.writeStreamBuffer.flush()

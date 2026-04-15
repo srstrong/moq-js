@@ -3,6 +3,7 @@ import { ControlStream } from "./stream"
 import { Queue, Watch } from "../common/async"
 import { Objects, TrackWriter, ObjectDatagramType } from "./objects"
 import { SubgroupType, SubgroupWriter } from "./subgroup"
+import { log } from "../common/log"
 
 export class Publisher {
 	// Used to send control messages
@@ -83,8 +84,8 @@ export class Publisher {
 			throw new Error(`no active published namespace: ${namespace}`)
 		}
 
+		log.info("published namespace:", namespace)
 		publishNamespaceSend.onOk()
-		console.log("published namespace:", namespace)
 	}
 
 	recvPublishNamespaceError(msg: Control.PublishNamespaceError) {
@@ -94,8 +95,7 @@ export class Publisher {
 		}
 		const publishNamespaceSend = this.#publishedNamespaces.get(namespace)
 		if (!publishNamespaceSend) {
-			// TODO debug this
-			console.warn(`publish namespace error for unknown announce: ${namespace}`)
+			log.warn(`publish namespace error for unknown announce: ${namespace}`)
 			return
 		}
 
@@ -222,9 +222,7 @@ export class SubscribeRecv {
 		if (this.#state !== "init") return
 		this.#state = "ack"
 
-		console.log("got subscribe req:", this.#id, "track:", this.#trackAlias, "sending subscribe ok")
-
-		// NOTE(itzmanish): revisit this
+		log.debug("subscribe ack", { id: this.#id, trackAlias: this.#trackAlias })
 		// Send the control message.
 		return this.#control.send({
 			type: Control.ControlMessageType.SubscribeOk,

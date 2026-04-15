@@ -106,14 +106,22 @@ export class Queue<T> {
 
 	async abort(err: Error) {
 		if (this.#closed) return
-		await this.#stream.writable.abort(err)
 		this.#closed = true
+		try {
+			await this.#stream.writable.abort(err)
+		} catch {
+			// Stream may already be errored
+		}
 	}
 
 	async close() {
 		if (this.#closed) return
-		await this.#stream.writable.close()
 		this.#closed = true
+		try {
+			await this.#stream.writable.close()
+		} catch {
+			// Stream may already be errored (e.g. WebTransport disconnect)
+		}
 	}
 
 	closed() {

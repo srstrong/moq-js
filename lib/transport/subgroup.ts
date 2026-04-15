@@ -170,7 +170,7 @@ export class SubgroupWriter {
     }
 
     async close() {
-        return this.stream.close()
+        try { await this.stream.close() } catch { /* stream may already be errored */ }
     }
 }
 export class SubgroupReader {
@@ -191,14 +191,12 @@ export class SubgroupReader {
             extHeaders = await KeyValuePairs.deserialize_with_reader(this.stream)
         }
 
-        console.log("subgroup header", object_id, extHeaders, this.stream)
 
         let obj_payload_len = await this.stream.getNumberVarInt()
 
         let object_payload: Uint8Array | undefined
         let status: Status | undefined
 
-        console.log("subgroup read", object_id, obj_payload_len)
 
         if (obj_payload_len == 0) {
             status = Status.try_from(await this.stream.getNumberVarInt())
@@ -206,7 +204,6 @@ export class SubgroupReader {
             object_payload = await this.stream.read(obj_payload_len)
         }
 
-        console.log("read success??", object_id, status, extHeaders, object_payload)
         return {
             object_id,
             status,
@@ -216,6 +213,6 @@ export class SubgroupReader {
     }
 
     async close() {
-        await this.stream.close()
+        try { await this.stream.close() } catch { /* stream may already be errored */ }
     }
 }

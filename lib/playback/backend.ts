@@ -55,7 +55,7 @@ export default class Backend {
 			msg.audio = {
 				channels: channels,
 				sampleRate: sampleRate,
-				ring: new RingShared(2, sampleRate / 10), // 100ms
+				ring: new RingShared(2, Math.floor(sampleRate / 5)), // 200ms buffer
 			}
 
 			this.#audio = new Audio(msg.audio)
@@ -108,7 +108,6 @@ export default class Backend {
 
 	// Enforce we're sending valid types to the worker
 	private send(msg: Message.ToWorker, ...transfer: Transferable[]) {
-		//console.log("sent message from main to worker", msg)
 		this.#worker.postMessage(msg, transfer)
 	}
 

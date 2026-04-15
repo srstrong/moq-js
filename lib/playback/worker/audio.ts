@@ -10,6 +10,8 @@ export class Renderer {
 
 	#decoder!: AudioDecoder
 	#stream: TransformStream<Frame, AudioData>
+	#dropCount = 0
+	#lastDropLog = 0
 
 	constructor(config: Message.ConfigAudio, timeline: Component) {
 		this.#timeline = timeline
@@ -37,7 +39,6 @@ export class Renderer {
 			const track = frame.track
 			if (!MP4.isAudioTrack(track)) throw new Error("expected audio track")
 
-			// We only support OPUS right now which doesn't need a description.
 			this.#decoder.configure({
 				codec: track.codec,
 				sampleRate: track.audio.sample_rate,
@@ -63,10 +64,17 @@ export class Renderer {
 			if (done) break
 
 			// Write audio samples to the ring buffer, dropping when there's no space.
+			const sizeBefore = this.#ring.size()
 			const written = this.#ring.write(frame)
 
 			if (written < frame.numberOfFrames) {
-				console.warn(`droppped ${frame.numberOfFrames - written} audio samples`)
+				this.#dropCount++
+				const now = performance.now()
+				if (now - this.#lastDropLog > 2000) {
+					console.warn(`audio: ${this.#dropCount} frames dropped in 2s, ring: size=${sizeBefore}/${this.#ring.capacity}, channels=${frame.numberOfChannels}, sampleRate=${frame.sampleRate ?? '?'}`)
+					this.#dropCount = 0
+					this.#lastDropLog = now
+				}
 			}
 		}
 	}

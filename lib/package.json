@@ -1,7 +1,7 @@
 {
-	"name": "@moq-js/player",
-	"version": "0.4.3",
-	"description": "Media over QUIC library",
+	"name": "@norskvideo/moq-js-player",
+	"version": "0.6.8",
+	"description": "Media over QUIC library (draft-14 fork of @moq-js/player)",
 	"license": "(MIT OR Apache-2.0)",
 	"wc-player": "video-moq/index.ts",
 	"wc-publisher": "moq-publisher/index.ts",
@@ -81,6 +81,6 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/englishm/moq-js"
+		"url": "git+https://github.com/srstrong/moq-js.git"
 	}
 }

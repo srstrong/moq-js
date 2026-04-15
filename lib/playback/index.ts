@@ -3,6 +3,7 @@ import * as Message from "./worker/message"
 import { Connection } from "../transport/connection"
 import * as Catalog from "../media/catalog"
 import { asError } from "../common/error"
+import { log } from "../common/log"
 
 import Backend from "./backend"
 
@@ -43,7 +44,7 @@ export default class Player extends EventTarget {
 	#abort!: (err: Error) => void
 	#trackTasks: Map<string, Promise<void>> = new Map()
 
-	private constructor(connection: Connection, catalog: Catalog.Root, tracknum: number, canvas: OffscreenCanvas) {
+	private constructor(connection: Connection, catalog: Catalog.Root, tracknum: number, canvas: OffscreenCanvas, nextUpdate?: () => Promise<Catalog.Root | undefined>) {
 		super()
 		this.#connection = connection
 		this.#catalog = catalog
@@ -57,6 +58,11 @@ export default class Player extends EventTarget {
 		super.dispatchEvent(new CustomEvent("catalogupdated", { detail: catalog }))
 		super.dispatchEvent(new CustomEvent("loadedmetadata", { detail: catalog }))
 
+		// Watch for catalog updates in the background
+		if (nextUpdate) {
+			this.#watchCatalogUpdates(nextUpdate)
+		}
+
 		const abort = new Promise<void>((resolve, reject) => {
 			this.#close = resolve
 			this.#abort = reject
@@ -66,22 +72,76 @@ export default class Player extends EventTarget {
 		this.#running = abort.catch(this.#close)
 
 		this.#run().catch((err) => {
-			console.error("Error in #run():", err)
+			log.error("Error in #run():", err)
 			super.dispatchEvent(new CustomEvent("error", { detail: err }))
 			this.#abort(err)
 		})
 	}
 
 	static async create(config: PlayerConfig, tracknum: number): Promise<Player> {
+		log.info("creating player", { url: config.url, namespace: config.namespace })
 		const client = new Client({ url: config.url, fingerprint: config.fingerprint })
 		const connection = await client.connect()
+		log.info("connected")
 
-		const catalog = await Catalog.fetch(connection, [config.namespace])
-		console.log("catalog", catalog)
+		const { catalog, nextUpdate } = await Catalog.fetch(connection, [config.namespace])
+		log.debug("catalog fetched", { tracks: catalog.tracks.length })
 
 		const canvas = config.canvas.transferControlToOffscreen()
 
-		return new Player(connection, catalog as any, tracknum, canvas)
+		return new Player(connection, catalog as any, tracknum, canvas, nextUpdate)
+	}
+
+	#watchCatalogUpdates(nextUpdate: () => Promise<Catalog.Root | undefined>) {
+		const loop = async () => {
+			for (;;) {
+				const updated = await nextUpdate()
+				if (!updated) break
+
+				// Find tracks in the new catalog that we don't have yet
+				const existingNames = new Set(this.#tracksByName.keys())
+				const newTracks: Catalog.Track[] = []
+
+				for (const track of updated.tracks) {
+					if (!existingNames.has(track.name)) {
+						newTracks.push(track)
+						this.#tracksByName.set(track.name, track)
+					}
+				}
+
+				if (newTracks.length === 0) continue
+
+				// Update catalog
+				this.#catalog = updated
+
+				// Pick audio/video names if we didn't have them before
+				if (!this.#audioTrackName) {
+					this.#audioTrackName = updated.tracks.find((t) => Catalog.isAudioTrack(t))?.name ?? ""
+				}
+				if (!this.#videoTrackName) {
+					this.#videoTrackName = updated.tracks.find((t) => Catalog.isVideoTrack(t))?.name ?? ""
+				}
+
+				// Subscribe to init segments for new tracks
+				const newInits = new Set<[string, string]>()
+				for (const track of newTracks) {
+					if ((track.name === this.#videoTrackName || track.name === this.#audioTrackName) && track.namespace && track.initTrack) {
+						newInits.add([track.namespace.join("/"), track.initTrack])
+					}
+				}
+				await Promise.all(Array.from(newInits).map((init) => this.#runInit(...init)))
+
+				// Start segment loops for new tracks
+				for (const track of newTracks) {
+					if (track.name === this.#videoTrackName || track.name === this.#audioTrackName) {
+						this.#runTrack(track)
+					}
+				}
+
+				super.dispatchEvent(new CustomEvent("catalogupdated", { detail: updated }))
+			}
+		}
+		loop().catch(() => { /* subscription ended */ })
 	}
 
 	async #run() {
@@ -98,8 +158,8 @@ export default class Player extends EventTarget {
 			}
 		})
 
-		console.log("inits", inits)
-		console.log("tracks", tracks)
+
+		log.debug("run", { inits: inits.size, tracks: tracks.length })
 
 		// Call #runInit on each unique init track
 		// TODO do this in parallel with #runTrack to remove a round trip
@@ -113,14 +173,12 @@ export default class Player extends EventTarget {
 	}
 
 	async #runInit(namespace: string, name: string) {
-		console.log("running #runInit", namespace, name)
+		log.debug("runInit", { namespace, name })
 		const sub = await this.#connection.subscribe([namespace], name)
 		try {
-			console.log("waiting for init data")
 			const init = await Promise.race([sub.data(), this.#running])
 			if (!init) throw new Error("no init data")
 
-			console.log("got init data")
 			// We don't care what type of reader we get, we just want the payload.
 			const chunk = await init.read()
 			if (!chunk) throw new Error("no init chunk")
@@ -153,11 +211,9 @@ export default class Player extends EventTarget {
 		const sub = await this.#connection.subscribe(track.namespace, track.name)
 
 		try {
-			console.log("starting segment data loop")
 			for (; ;) {
-				console.log("waiting for segment data")
 				const segment = await Promise.race([sub.data(), this.#running])
-				if (!segment) continue
+				if (!segment) break
 
 				if (!(segment instanceof SubgroupReader)) {
 					throw new Error(`expected group reader for segment: ${track.name}`)
@@ -188,9 +244,9 @@ export default class Player extends EventTarget {
 			}
 		} catch (error) {
 			if (error instanceof Error && error.message.includes("cancelled")) {
-				console.log("Cancelled subscription to track: ", track.name)
+				log.debug("track subscription cancelled:", track.name)
 			} else {
-				console.error("Error in #runTrack:", error)
+				log.error("track error:", track.name, error)
 				super.dispatchEvent(new CustomEvent("error", { detail: error }))
 			}
 		} finally {
@@ -200,7 +256,7 @@ export default class Player extends EventTarget {
 
 	#runTrack(track: Catalog.Track) {
 		if (this.#trackTasks.has(track.name)) {
-			console.warn(`Already exist a runTrack task for the track: ${track.name}`)
+			log.warn(`Already exist a runTrack task for the track: ${track.name}`)
 			return
 		}
 
@@ -209,7 +265,7 @@ export default class Player extends EventTarget {
 		this.#trackTasks.set(track.name, task)
 
 		task.catch((err) => {
-			console.error(`Error to subscribe to track ${track.name}`, err)
+			log.error(`Error to subscribe to track ${track.name}`, err)
 			super.dispatchEvent(new CustomEvent("error", { detail: err }))
 		}).finally(() => {
 			this.#trackTasks.delete(track.name)
@@ -230,7 +286,7 @@ export default class Player extends EventTarget {
 		if (this.#tracknum >= 0 && this.#tracknum < this.#catalog.tracks.length) {
 			return this.#catalog.tracks[this.#tracknum]
 		} else {
-			console.warn("Invalid track number:", this.#tracknum)
+			log.warn("Invalid track number:", this.#tracknum)
 			return null
 		}
 	}
@@ -266,10 +322,10 @@ export default class Player extends EventTarget {
 			return
 		}
 		if (currentTrack) {
-			console.log(`Unsubscribing from track: ${currentTrack.name} and Subscribing to track: ${trackname}`)
+			log.debug("switching track", { from: currentTrack.name, to: trackname })
 			await this.unsubscribeFromTrack(currentTrack.name)
 		} else {
-			console.log(`Subscribing to track: ${trackname}`)
+			log.debug("subscribing to track", trackname)
 		}
 		this.#tracknum = this.#catalog.tracks.findIndex((track) => track.name === trackname)
 
@@ -277,13 +333,12 @@ export default class Player extends EventTarget {
 	}
 
 	async mute(isMuted: boolean) {
+		log.debug("mute", { isMuted, audioTrack: this.#audioTrackName })
 		this.#muted = isMuted
 		if (isMuted) {
-			console.log("Unsubscribing from audio track: ", this.#audioTrackName)
 			await this.unsubscribeFromTrack(this.#audioTrackName)
 			await this.#backend.mute()
 		} else {
-			console.log("Subscribing to audio track: ", this.#audioTrackName)
 			this.subscribeFromTrackName(this.#audioTrackName)
 			await this.#backend.unmute()
 		}
@@ -291,7 +346,7 @@ export default class Player extends EventTarget {
 	}
 
 	async unsubscribeFromTrack(trackname: string) {
-		console.log(`Unsubscribing from track: ${trackname}`)
+		log.debug("unsubscribing from track", trackname)
 		super.dispatchEvent(new CustomEvent("unsubscribestared", { detail: { track: trackname } }))
 		await this.#connection.unsubscribe(trackname)
 		const task = this.#trackTasks.get(trackname)
@@ -302,14 +357,13 @@ export default class Player extends EventTarget {
 	}
 
 	subscribeFromTrackName(trackname: string) {
-		console.log(`Subscribing to track: ${trackname}`)
 		const track = this.#tracksByName.get(trackname)
 		if (track) {
 			super.dispatchEvent(new CustomEvent("subscribestared", { detail: { track: trackname } }))
 			this.#runTrack(track)
 			super.dispatchEvent(new CustomEvent("subscribedone", { detail: { track: trackname } }))
 		} else {
-			console.warn(`Track ${trackname} not in #tracksByName`)
+			log.warn(`track not found for subscribe: ${trackname}`)
 		}
 	}
 
@@ -331,7 +385,7 @@ export default class Player extends EventTarget {
 		try {
 			await this.#running
 		} catch (e) {
-			console.error("Error in Player.closed():", e)
+			log.error("Error in Player.closed():", e)
 			return asError(e)
 		}
 	}
@@ -375,7 +429,6 @@ export default class Player extends EventTarget {
 			const audioPromise = this.unsubscribeFromTrack(this.#audioTrackName)
 			const videoPromise = this.unsubscribeFromTrack(this.#videoTrackName)
 			super.dispatchEvent(new CustomEvent("pause", { detail: { track: this.#videoTrackName } }))
-			console.log("dispatchEvent pause")
 
 			this.#backend.pause()
 			await Promise.all([mutePromise, audioPromise, videoPromise])

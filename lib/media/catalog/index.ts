@@ -1,5 +1,6 @@
 import { Connection } from "../../transport"
 import { asError } from "../../common/error"
+import { log } from "../../common/log"
 import { debug } from "../../transport/utils"
 
 export interface CommonTrackFields {
@@ -47,33 +48,57 @@ export function decode(raw: Uint8Array): Root {
 	return catalog
 }
 
-export async function fetch(connection: Connection, namespace: string[]) {
+export interface CatalogResult {
+	catalog: Root
+	/** Read subsequent catalog updates. Returns undefined when the
+	 *  subscription ends. Each call blocks until a new group arrives. */
+	nextUpdate: () => Promise<Root | undefined>
+}
+
+export async function fetch(connection: Connection, namespace: string[]): Promise<CatalogResult> {
 	const subscribe = await connection.subscribe(namespace, ".catalog")
 	try {
 		debug("catalog subscribe", subscribe)
 		const segment = await subscribe.data()
 		if (!segment) throw new Error("no catalog data")
 
-		console.log("catalog segment", segment)
 		const chunk = await segment.read()
 		if (!chunk) throw new Error("no catalog chunk")
 
-		console.log("catalog chunk", chunk)
 		await segment.close()
-		await subscribe.close() // we done
 
-		if (chunk.object_payload instanceof Uint8Array) {
-			return decode(chunk.object_payload)
-		} else {
+		if (!(chunk.object_payload instanceof Uint8Array)) {
 			throw new Error("invalid catalog chunk")
 		}
+
+		const catalog = decode(chunk.object_payload)
+
+		// Return the initial catalog plus a function to read updates.
+		// The subscription stays open so subsequent groups (catalog
+		// updates from the publisher) can be read.
+		const nextUpdate = async (): Promise<Root | undefined> => {
+			try {
+				const seg = await subscribe.data()
+				if (!seg) return undefined
+
+				const obj = await seg.read()
+				if (!obj) return undefined
+
+				await seg.close()
+
+				if (obj.object_payload instanceof Uint8Array) {
+					return decode(obj.object_payload)
+				}
+				return undefined
+			} catch {
+				return undefined
+			}
+		}
+
+		return { catalog, nextUpdate }
 	} catch (e) {
-		console.error("Catalog fetch error: ", e)
+		log.error("catalog fetch error:", e)
 		const err = asError(e)
-
-		// // Close the subscription after we're done.
-		// await subscribe.close(1n, err.message)
-
 		throw err
 	}
 }

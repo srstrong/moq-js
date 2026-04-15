@@ -4,6 +4,7 @@ import { Objects } from "./objects"
 import { Connection } from "./connection"
 import { ClientSetup, ControlMessageType, ServerSetup } from "./control"
 import { ImmutableBytesBuffer, ReadableWritableStreamBuffer } from "./buffer"
+import { log } from "../common/log"
 
 export interface ClientConfig {
 	url: string
@@ -21,7 +22,7 @@ export class Client {
 		this.config = config
 
 		this.#fingerprint = this.#fetchFingerprint(config.fingerprint).catch((e) => {
-			console.warn("failed to fetch fingerprint: ", e)
+			log.warn("failed to fetch fingerprint: ", e)
 			return undefined
 		})
 	}

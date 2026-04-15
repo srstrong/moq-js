@@ -12,6 +12,7 @@ import {
 } from "./control"
 import { debug } from "./utils"
 import { ImmutableBytesBuffer, ReadableWritableStreamBuffer, Reader, Writer } from "./buffer"
+import { log } from "../common/log"
 
 export class ControlStream {
 	private decoder: Decoder
@@ -83,7 +84,7 @@ export class Decoder {
 		const t = await this.messageType()
 		const advertisedLength = await this.r.getU16()
 		if (advertisedLength > this.r.byteLength) {
-			console.error(
+			log.error(
 				`message: ${ControlMessageType.toString(t)} length mismatch: advertised ${advertisedLength} > ${this.r.byteLength} received`,
 			)
 			// NOTE(itzmanish): should we have a timeout and retry few times even if timeout is reached?

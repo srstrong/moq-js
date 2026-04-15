@@ -19,7 +19,6 @@ export namespace ClientSetup {
         payloadBuf.putBytes(Parameters.serialize(v.params))
         mainBuf.putU16(payloadBuf.byteLength)
         mainBuf.putBytes(payloadBuf.Uint8Array)
-        console.log("client setup: payload len:", payloadBuf.length, "msg len:", mainBuf.length)
         return mainBuf.Uint8Array
     }
 

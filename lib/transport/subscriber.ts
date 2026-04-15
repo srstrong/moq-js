@@ -3,6 +3,7 @@ import { Queue, Watch } from "../common/async"
 import { Objects } from "./objects"
 import type { TrackReader } from "./objects"
 import { debug } from "./utils"
+import { log } from "../common/log"
 import { ControlStream } from "./stream"
 import { SubgroupReader } from "./subgroup"
 
@@ -126,17 +127,17 @@ export class Subscriber {
 		if (this.#trackToIDMap.has(track)) {
 			const trackID = this.#trackToIDMap.get(track)
 			if (trackID === undefined) {
-				console.warn(`Exception track ${track} not found in trackToIDMap.`)
+				log.warn(`Exception track ${track} not found in trackToIDMap.`)
 				return
 			}
 			try {
 				await this.#control.send({ type: Control.ControlMessageType.Unsubscribe, message: { id: trackID } })
 				this.#trackToIDMap.delete(track)
 			} catch (error) {
-				console.error(`Failed to unsubscribe from track ${track}:`, error)
+				log.error(`Failed to unsubscribe from track ${track}:`, error)
 			}
 		} else {
-			console.warn(`During unsubscribe request initiation attempt track ${track} not found in trackToIDMap.`)
+			log.debug(`unsubscribe: track ${track} not found in trackToIDMap (may already be unsubscribed)`)
 		}
 	}
 
@@ -156,7 +157,7 @@ export class Subscriber {
 			callback(msg.id)
 		}
 
-		console.log("subscribe ok", msg)
+		log.debug("subscribe ok", { id: msg.id, trackAlias: msg.track_alias })
 		subscribe.onOk(msg.track_alias)
 	}
 
@@ -179,23 +180,20 @@ export class Subscriber {
 	}
 
 	async recvObject(reader: TrackReader | SubgroupReader) {
-		console.log("got object on recvObject", reader)
 		// Get track alias from reader header
 		const track_alias = reader.header.track_alias
 
 		// Map track alias back to subscription ID
 		const subscriptionId = this.#aliasToSubscriptionMap.get(track_alias)
-		console.log("got subscriptionId", subscriptionId)
 		const callback = async (id: bigint) => {
 			const subscribe = this.#subscribe.get(id)
 			if (!subscribe) {
 				throw new Error(`data for unknown subscription: ${id}`)
 			}
-			console.log("doing subscribe on data", reader)
 			return subscribe.onData(reader)
 		}
 		if (subscriptionId === undefined) {
-			console.warn(`Exception track alias ${track_alias} not found in aliasToSubscriptionMap.`)
+			log.warn(`Exception track alias ${track_alias} not found in aliasToSubscriptionMap.`)
 			this.#pendingTrack.set(track_alias, callback)
 			return
 		}
@@ -270,13 +268,11 @@ export class SubscribeSend {
 	}
 
 	onOk(trackAlias: bigint) {
-		console.log("setting track alias", trackAlias)
 		this.#trackAlias = trackAlias
 	}
 
-	// FIXME(itzmanish): implement correctly 
-	async onDone(code: bigint, streamCount: bigint, reason: string) {
-		throw new Error(`TODO onDone`)
+	async onDone(_code: bigint, _streamCount: bigint, _reason: string) {
+		await this.#data.close()
 	}
 
 	async onError(code: bigint, reason: string) {
@@ -293,7 +289,6 @@ export class SubscribeSend {
 	}
 
 	async onData(reader: TrackReader | SubgroupReader) {
-		console.log("subscribe send onData", reader)
 		if (!this.#data.closed()) await this.#data.push(reader)
 	}
 

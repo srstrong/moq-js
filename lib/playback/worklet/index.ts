@@ -36,10 +36,9 @@ class Renderer extends AudioWorkletProcessor {
 			throw new Error("only a single track is supported")
 		}
 
-		if (this.ring.size() == this.ring.capacity) {
-			// This is a hack to clear any latency in the ring buffer.
-			// The proper solution is to play back slightly faster?
-			console.warn("resyncing ring buffer")
+		if (this.ring.size() >= this.ring.capacity - 128) {
+			// Ring is full — clear to shed latency. With a 200ms ring
+			// this should only happen on initial burst, not steady state.
 			this.ring.clear()
 			return true
 		}

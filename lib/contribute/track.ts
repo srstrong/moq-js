@@ -1,5 +1,6 @@
 import { Segment } from "./segment"
 import { Notify } from "../common/async"
+import { log } from "../common/log"
 import { Chunk } from "./chunk"
 import { Container } from "./container"
 import { BroadcastConfig } from "./broadcast"
@@ -50,7 +51,7 @@ export class Track {
 			.pipeThrough(container.encode)
 			.pipeTo(segments)
 			.catch((err) => {
-				console.error("Audio pipeline error:", err)
+				log.error("audio pipeline error:", err)
 				throw err
 			})
 	}
@@ -108,7 +109,7 @@ export class Track {
 		if ((writer.desiredSize || 0) > 0) {
 			await writer.write(chunk)
 		} else {
-			console.warn("dropping chunk", writer.desiredSize)
+			log.warn("dropping chunk", writer.desiredSize)
 		}
 
 		writer.releaseLock()

@@ -1,5 +1,6 @@
 import STYLE_SHEET from "./publisher-moq.css"
 import { PublisherApi, PublisherOptions } from "../publish"
+import { log } from "../common/log"
 
 export class PublisherMoq extends HTMLElement {
 	private shadow: ShadowRoot
@@ -121,7 +122,7 @@ export class PublisherMoq extends HTMLElement {
 	private async handleClick() {
 		if (!this.isPublishing) {
 			if (!this.mediaStream) {
-				console.warn("No media stream available")
+				log.warn("No media stream available")
 				return
 			}
 
@@ -156,8 +157,8 @@ export class PublisherMoq extends HTMLElement {
 				audio: audioConfig,
 			}
 
-			console.log("Publisher Options", opts)
 
+			log.debug("publisher options", opts)
 			this.publisher = new PublisherApi(opts)
 
 			try {
@@ -175,13 +176,13 @@ export class PublisherMoq extends HTMLElement {
 				}
 				this.playbackUrlTextarea.style.display = "block"
 			} catch (err) {
-				console.error("Publish failed:", err)
+				log.error("Publish failed:", err)
 			}
 		} else {
 			try {
 				await this.publisher!.stop()
 			} catch (err) {
-				console.error("Stop failed:", err)
+				log.error("Stop failed:", err)
 			} finally {
 				this.isPublishing = false
 				this.connectButton.textContent = "Connect"

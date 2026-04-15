@@ -1,4 +1,5 @@
 import * as MP4 from "../media/mp4"
+import { log } from "../common/log"
 import { Chunk } from "./chunk"
 
 type DecoderConfig = AudioDecoderConfig | VideoDecoderConfig
@@ -20,13 +21,13 @@ export class Container {
 			transform: (frame, controller) => {
 				try {
 					if (isDecoderConfig(frame)) {
-						console.log("Container received decoder config:", frame)
+						log.debug("container: decoder config received")
 						return this.#init(frame, controller)
 					} else {
 						return this.#enqueue(frame, controller)
 					}
 				} catch (e) {
-					console.error("Container failed to process frame:", e)
+					log.error("container: failed to process frame:", e)
 					throw e
 				}
 			},

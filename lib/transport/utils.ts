@@ -1,5 +1,7 @@
+import { log } from "../common/log"
+
 export function debug(...msg: any[]) {
-    console.log("itzmanish:", ...msg)
+    log.debug(...msg)
 }
 
 export async function sleep(ms: number) {

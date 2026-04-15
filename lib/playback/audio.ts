@@ -1,6 +1,7 @@
 import * as Message from "./worker/message"
 
 import registerMyAudioWorklet from "audio-worklet:./worklet/index.ts"
+import { log } from "../common/log"
 
 // NOTE: This must be on the main thread
 export class Audio {
@@ -14,7 +15,7 @@ export class Audio {
 			sampleRate: config.sampleRate,
 		})
 		this.volumeNode = this.context.createGain()
-		this.volumeNode.gain.value = 1.0
+		this.volumeNode.gain.value = 0
 
 		this.worklet = this.load(config)
 	}
@@ -30,7 +31,7 @@ export class Audio {
 
 		worklet.port.addEventListener("message", this.on.bind(this))
 		worklet.onprocessorerror = (e: Event) => {
-			console.error("Audio worklet error:", e)
+			log.error("Audio worklet error:", e)
 		}
 
 		// Connect the worklet to the volume node and then to the speakers
