@@ -1,6 +1,6 @@
 {
 	"name": "@norskvideo/moq-js-player",
-	"version": "0.6.8",
+	"version": "0.6.13",
 	"description": "Media over QUIC library (draft-14 fork of @moq-js/player)",
 	"license": "(MIT OR Apache-2.0)",
 	"wc-player": "video-moq/index.ts",
